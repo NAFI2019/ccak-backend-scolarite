@@ -1,0 +1,127 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ccak-backend-app
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini:ro
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost
+      DB_CONNECTION: pgsql
+      DB_HOST: pgsql
+      DB_PORT: 5432
+      DB_DATABASE: ucak_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - pgsql
+      - redis
+    networks:
+      - laravel
+
+  web:
+    image: nginx:1.27-alpine
+    container_name: ccak-backend-web
+    depends_on:
+      - app
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - laravel
+
+  pgsql:
+    image: postgres:16-alpine
+    container_name: ccak-backend-pgsql
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ucak_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgsql_data:/var/lib/postgresql/data
+    networks:
+      - laravel
+
+  redis:
+    image: redis:7-alpine
+    container_name: ccak-backend-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - laravel
+
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: ccak-backend-keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    networks:
+      - laravel
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    container_name: ccak-backend-keycloak
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME: "${KEYCLOAK_HOSTNAME:-localhost}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: "xforwarded"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - keycloak-db
+    networks:
+      - laravel
+
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.4.7
+    depends_on:
+      - keycloak
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      /opt/keycloak/bin/kcadm.sh config credentials \
+        --server http://keycloak:8080 \
+        --realm master \
+        --user $$KEYCLOAK_ADMIN \
+        --password $$KEYCLOAK_ADMIN_PASSWORD && \
+      /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    networks:
+      - laravel
+    restart: "no"
+
+volumes:
+  pgsql_data:
+  redis_data:
+  keycloak_db_data:
+
+networks:
+  laravel:
