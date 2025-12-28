@@ -51,6 +51,6 @@ class AppServiceProvider extends ServiceProvider
                 || $user->can('permissions.view')
                 || $user->can('roles.view');
         });
-        //  User::observe(UserObserver::class);
+         User::observe(UserObserver::class);
     }
 }
